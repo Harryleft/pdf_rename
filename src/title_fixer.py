@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
-"""
-利用LLM对PDF文件名进行完整补充
-"""
+"""Use a DeepSeek-compatible LLM to expand incomplete PDF titles."""
+
 import json
 import logging
 import os
@@ -9,18 +8,18 @@ import re
 
 from openai import OpenAI
 
-from custom_exception import APIException
+from config import OPENAI_API_KEY_ENV, OPENAI_BASE_URL, OPENAI_MODEL, TITLE_PATTERN
+from exceptions import APIException
 
-
-# DeepSeek配置
 client = OpenAI(
-    api_key=os.getenv("OPENAI_API_KEY"),
-    base_url="https://api.deepseek.com",
+    api_key=os.getenv(OPENAI_API_KEY_ENV),
+    base_url=OPENAI_BASE_URL,
 )
 
+
 def split_title(title):
-    """将标题拆分为四个部分"""
-    match = re.match(r"^(.*?)(\.\.\.)(.*?)(_.*)$", title)
+    """Split the filename title into four segments."""
+    match = re.match(TITLE_PATTERN, title)
     if match:
         part1 = match.group(1)
         part2 = match.group(2)
@@ -30,18 +29,37 @@ def split_title(title):
 
     return title, "", "", ""
 
+
 def get_paper_title_with_deepseek(text, original_title):
-    """
-    使用LLM模型从文本中提取并补充论文标题
-
-    :param text: 从PDF中提取的文本内容
-    :param original_title: 原始文件名中的标题部分
-    :return: 补充完整的论文标题
-    """
-
+    """Return the expanded title based on extracted PDF text."""
     part1, part2, part3, _ = split_title(original_title)
     part5 = ""
-    system_prompt = f"""
+
+    system_prompt = _build_system_prompt(part1, part2, part3, part5)
+    user_prompt = _build_user_prompt(text)
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
+    ]
+
+    try:
+        response = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=messages,
+            response_format={"type": "json_object"},
+        )
+
+        renamed_title = json.loads(response.choices[0].message.content)
+        return renamed_title.get("title", "")
+
+    except APIException as exc:
+        logging.error("Error calling API: %s", str(exc))
+        return None
+
+
+def _build_system_prompt(part1, part2, part3, part5):
+    return f"""
         **背景**：  
         你是一名文件命名助手，需要根据输入的论文文本内容，将标题补充完整。
 
@@ -64,26 +82,9 @@ def get_paper_title_with_deepseek(text, original_title):
 
     """
 
-    user_prompt = f"""
+
+def _build_user_prompt(text):
+    return f"""
     文本内容：
     {text}
     """
-
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_prompt},
-    ]
-
-    try:
-        response = client.chat.completions.create(
-            model="deepseek-coder",
-            messages=messages,
-            response_format={"type": "json_object"},
-        )
-
-        renamed_title = json.loads(response.choices[0].message.content)
-        return renamed_title.get("title", "")
-
-    except APIException as e:
-        logging.error("Error calling API: %s", str(e))
-        return None
