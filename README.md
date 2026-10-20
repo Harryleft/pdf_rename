@@ -9,6 +9,7 @@
 
 2. 配置环境变量  
    - `DEEPSEEK_API_KEY`：DeepSeek API Key（脚本默认使用 `https://api.deepseek.com`）
+   - 密钥只通过环境变量配置，请勿写入源码或文档，也不要提交含密钥的 `.env` 文件。
 
 3. 运行脚本  
 ```bash
